@@ -2,6 +2,8 @@
 
 This library utilizes the Analog Devices iSensor FX3 platform to create a robust, easy to use servo controller interface.
 
+See: https://github.com/juchong/iSensor-FX3-API
+
 Features:
 Up to 6 servos run by a single controller
 Configurable motion paths, with variable rotation speed across a single motion path
