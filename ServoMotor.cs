@@ -10,7 +10,6 @@ namespace FX3ServoController
         private FX3Api.FX3PinObject m_pin;
         private double m_period;
         private double m_maxAngle;
-        private List<ServoPosition> m_motionPath;
 
         /// <summary>
         /// Servo motor constructor
@@ -21,7 +20,6 @@ namespace FX3ServoController
             m_pin = ControlPin;
             m_period = 20;
             m_maxAngle = 180;
-            m_motionPath = new List<ServoPosition>();
         }
 
         /// <summary>
@@ -30,45 +28,6 @@ namespace FX3ServoController
         /// <param name="PinNumber">The GPIO number of the FX3 pin which drives the PWM input to the servo</param>
         public ServoMotor(uint PinNumber) : this(new FX3Api.FX3PinObject(PinNumber))
         {
-        }
-
-        /// <summary>
-        /// Get or set the motion path for this servo
-        /// </summary>
-        public List<ServoPosition> MotionPath
-        {
-            get
-            {
-                return m_motionPath;
-            }
-            set
-            {
-                if(value != null)
-                {
-                    m_motionPath = value;
-                }
-                else
-                {
-                    m_motionPath = new List<ServoPosition>();
-                }
-            }
-        }
-
-        /// <summary>
-        /// Add point to the end of the motion path.
-        /// </summary>
-        /// <param name="point">The servo position to add</param>
-        public void AddToMotionPath(ServoPosition point)
-        {
-            m_motionPath.Add(point);
-        }
-
-        /// <summary>
-        /// Clear the current motion path
-        /// </summary>
-        public void ClearMotionPath()
-        {
-            m_motionPath.Clear();
         }
 
         /// <summary>
@@ -112,9 +71,20 @@ namespace FX3ServoController
         }
 
         /// <summary>
+        /// Get the PWM pin object associated with the motor
+        /// </summary>
+        public FX3Api.FX3PinObject ControlPin
+        {
+            get
+            {
+                return m_pin;
+            }
+        }
+
+        /// <summary>
         /// Get the PWM block associated with the servo motor. This is essentially the port identifier for the motor.
         /// </summary>
-        public uint PWMPinIndex
+        public uint PWMHardwareIndex
         {
             get
             {

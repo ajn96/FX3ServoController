@@ -6,15 +6,6 @@ using System.Timers;
 
 namespace FX3ServoController
 {
-    struct MotionExecutionState
-    {
-        public ServoMotor Motor;
-        public int MotionProfileIndex;
-        public int CurrentIteration;
-        public int TotalIterations;
-        public double currentAngle;
-        public bool isRunning;
-    }
 
     public class ServoController
     {
@@ -25,7 +16,6 @@ namespace FX3ServoController
         private System.Timers.Timer m_updateTimer;
         private List<MotionExecutionState> m_ExecutionList;
         private Stopwatch m_stopWatch;
-        private long m_lastUpdateTime;
 
         /// <summary>
         /// Servo controller constructor
@@ -46,7 +36,6 @@ namespace FX3ServoController
             m_ExecutionList = new List<MotionExecutionState>();
             m_updatePeriod = 100;
             m_stopWatch = new Stopwatch();
-            m_lastUpdateTime = 0;
 
             //set up timer period
             m_updateTimer = new System.Timers.Timer(m_updatePeriod);
@@ -56,6 +45,9 @@ namespace FX3ServoController
             m_updateTimer.Enabled = false;
         }
 
+        /// <summary>
+        /// Period in which to update the PWM signal values
+        /// </summary>
         public double SignalUpdatePeriodMs
         {
             get
@@ -69,59 +61,100 @@ namespace FX3ServoController
         }
 
         /// <summary>
-        /// Run the motion profile on the selected servo until cancelled
+        /// Run motion profile forever until cancelled. Repeats from the start of the profile.
         /// </summary>
-        /// <param name="Motor">The motor to run</param>
-        public void RunServoMotion(ref ServoMotor Motor)
+        /// <param name="Motor">The motor to run the motion profile on</param>
+        /// <param name="MotionProfile">The profile to run</param>
+        public void RunServoMotion(ServoMotor Motor, List<ServoPosition> MotionProfile)
         {
             //call overload with multiple iterations. -1 means infinite
-            RunServoMotion(ref Motor, -1);
+            RunServoMotion(Motor, MotionProfile, -1);
         }
 
-        public void RunServoMotion(ref ServoMotor Motor, List<ServoPosition> MotionPath)
+        public void RunServoMotion(ServoMotor Motor, List<ServoPosition> MotionProfile, int NumIterations)
         {
-            //apply the motion path to the motor object
-            Motor.MotionPath = MotionPath;
+            //Clear any exisiting motion profile for the selected motor
+            CancelServoMotion(Motor);
 
-            //call base function
-            RunServoMotion(ref Motor);
+            //add to the execution list
+            MotionExecutionState state = new MotionExecutionState();
+            state.Motor = Motor;
+            state.LastUpdateTime = m_stopWatch.ElapsedMilliseconds;
+            state.MotionProfile = MotionProfile;
+            state.TotalIterations = NumIterations;
+            state.isRunning = (MotionProfile.Count > 0);
+            if (state.isRunning)
+                state.CurrentAngle = MotionProfile[0].TargetAngle;
+            else
+                state.CurrentAngle = Motor.MaxAngle / 2;
+            m_ExecutionList.Add(state);
+
+            //ensure update timer is enabled
+            m_updateTimer.Enabled = true;
         }
 
-        public void RunServoMotion(ref ServoMotor Motor, int NumIterations)
+        public void CancelServoMotion(ServoMotor Motor)
         {
-
+            bool motorFound = false;
+            for (int i = 0; i<m_ExecutionList.Count; i++)
+            {
+                if(Motor == m_ExecutionList[i].Motor)
+                {
+                    m_ExecutionList.RemoveAt(i);
+                    motorFound = true;
+                    break;
+                }
+            }
+            if (!motorFound)
+                throw new ArgumentException("ERROR: Could not find motor to cancel motion");
         }
 
-        public void RunServoMotion(ref ServoMotor Motor, int NumIteration, List<ServoPosition> MotionPath)
+        public void PauseServoMotion(ServoMotor Motor)
         {
-            //Assign the motion path
-            Motor.MotionPath = MotionPath;
-            //call base function
-            RunServoMotion(ref Motor, NumIteration);
+            bool motorFound = false;
+            for (int i = 0; i < m_ExecutionList.Count; i++)
+            {
+                if (Motor == m_ExecutionList[i].Motor)
+                {
+                    m_ExecutionList[i].isRunning = false;
+                    motorFound = true;
+                    break;
+                }
+            }
+            if (!motorFound)
+                throw new ArgumentException("ERROR: Paused motor not found");
         }
 
-        public void CancelServoMotion(ref ServoMotor Motor)
+        public void ResumeServoMotion(ServoMotor Motor)
         {
-
-        }
-
-        public void PauseServoMotion(ref ServoMotor Motor)
-        {
-
+            bool motorFound = false;
+            for (int i = 0; i < m_ExecutionList.Count; i++)
+            {
+                if (Motor == m_ExecutionList[i].Motor)
+                {
+                    m_ExecutionList[i].isRunning = true;
+                    motorFound = true;
+                    m_updateTimer.Enabled = true;
+                    break;
+                }
+            }
+            if (!motorFound)
+                throw new ArgumentException("ERROR: Could not find motor to resume");
         }
 
         public void CancelAllServoMotion()
         {
-
+            m_ExecutionList.Clear();
+            m_updateTimer.Enabled = false;
         }
 
         public bool IsMotorRunning(ServoMotor Motor)
         {
-            uint motorID = Motor.PWMPinIndex;
+            uint motorID = Motor.PWMHardwareIndex;
             for(int i = 0; i<m_ExecutionList.Count; i++)
             {
-                if (m_ExecutionList[i].Motor.PWMPinIndex == motorID && m_ExecutionList[i].isRunning)
-                    return true;
+                if (m_ExecutionList[i].Motor.PWMHardwareIndex == motorID)
+                    return m_ExecutionList[i].isRunning;
             }
             return false;
         }
@@ -130,25 +163,97 @@ namespace FX3ServoController
         {
             //variables
             double nextAngle;
+            double angleIncrement;
             double timeSinceUpdate;
             ServoPosition nextPosition;
+            bool targetMet;
 
             //Get the FX3 mutex
             m_FX3Mutex.WaitOne();
 
-            timeSinceUpdate = m_stopWatch.ElapsedMilliseconds - m_lastUpdateTime;
             //update each motor which is running
             try
             {
-                foreach(MotionExecutionState state in m_ExecutionList)
+                for (int i = 0; i < m_ExecutionList.Count; i++)
                 {
-                    if(state.isRunning)
+                    //check profile is non-zero and exits
+                    if (m_ExecutionList[i].MotionProfile == null || m_ExecutionList[i].MotionProfile.Count == 0)
+                        m_ExecutionList[i].isRunning = false;
+
+                    if (m_ExecutionList[i].isRunning)
                     {
+                        //find time since update
+                        timeSinceUpdate = m_stopWatch.ElapsedMilliseconds - m_ExecutionList[i].LastUpdateTime;
+
+                        //set new update time
+                        m_ExecutionList[i].LastUpdateTime = m_stopWatch.ElapsedMilliseconds;
+
+                        //set target met to false
+                        targetMet = false;
+
                         //get the position the motion is moving towards
-                        
+                        nextPosition = m_ExecutionList[i].MotionProfile[m_ExecutionList[i].MotionProfileIndex];
+
+                        //get the angle increment based on the current motion speed
+                        angleIncrement = (timeSinceUpdate * nextPosition.RotationSpeed) / 1000;
+
+                        //check relative to current position
+                        if (nextPosition.TargetAngle > m_ExecutionList[i].CurrentAngle)
+                        {
+                            //increment next angle to approach target
+                            nextAngle = m_ExecutionList[i].CurrentAngle + angleIncrement;
+
+                            if (nextAngle >= nextPosition.TargetAngle)
+                            {
+                                //set angle to target
+                                nextAngle = nextPosition.TargetAngle;
+
+                                //set target met flag
+                                targetMet = true;
+                            }
+                        }
+                        else
+                        {
+                            //decrement next angle to approach target
+                            nextAngle = m_ExecutionList[i].CurrentAngle - angleIncrement;
+
+                            if (nextAngle <= nextPosition.TargetAngle)
+                            {
+                                //set angle to target
+                                nextAngle = nextPosition.TargetAngle;
+
+                                //set target met flag
+                                targetMet = true;
+                            }
+                        }
+                        //handle target being met
+                        if (targetMet)
+                        {
+                            //move to next motion
+                            if (m_ExecutionList[i].MotionProfileIndex < m_ExecutionList[i].MotionProfile.Count)
+                                m_ExecutionList[i].MotionProfileIndex++;
+                            else
+                            {
+                                //we have reached the end of the motion
+                                m_ExecutionList[i].MotionProfileIndex = 0;
+                                m_ExecutionList[i].CurrentIteration++;
+                                //only check exit condition if totaliterations != -1
+                                if (m_ExecutionList[i].TotalIterations != -1)
+                                {
+                                    if (m_ExecutionList[i].CurrentIteration >= m_ExecutionList[i].TotalIterations)
+                                    {
+                                        //done with entire motion
+                                        m_ExecutionList[i].isRunning = false;
+                                        m_ExecutionList[i].CurrentIteration = 0;
+                                    }
+                                }
+                            }
+                        }
+
+                        //apply new angle to servo motor
+                        SetServoAngle(m_ExecutionList[i].Motor.ControlPin, nextAngle, m_ExecutionList[i].Motor.MaxAngle, m_ExecutionList[i].Motor.PWMPeriodMs);
                     }
                 }
-                m_lastUpdateTime = m_stopWatch.ElapsedMilliseconds;
             }
             catch (Exception ex)
             {
@@ -160,5 +265,17 @@ namespace FX3ServoController
             }
         }
 
+        private void SetServoAngle(FX3Api.FX3PinObject Pin, double Angle, double Range, double PWMPeriodMs)
+        {
+            //Find duty cycle
+            double dutyCycle = Angle / Range;
+            //find PWM freq
+            double freq = 1000 / PWMPeriodMs;
+            //call PWM stop if needed
+            if(m_FX3.isPWMPin(Pin))
+                m_FX3.StopPWM(Pin);
+            //start PWM signal generation
+            m_FX3.StartPWM(freq, dutyCycle, Pin);
+        }
     }
 }
