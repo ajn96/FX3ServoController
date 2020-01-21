@@ -7,7 +7,7 @@ namespace FX3ServoController
     /// <summary>
     /// A servo angle and the rotation speed to reach that angle
     /// </summary>
-    class ServoPosition
+    public class ServoPosition
     {
         //Private members
         private double m_targetAngle;

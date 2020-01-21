@@ -4,4 +4,22 @@
     <TargetFramework>netcoreapp2.0</TargetFramework>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Reference Include="adisApi">
+      <HintPath>Resources\adisApi.dll</HintPath>
+    </Reference>
+    <Reference Include="adisInterface">
+      <HintPath>Resources\adisInterface.dll</HintPath>
+    </Reference>
+    <Reference Include="CyUSB">
+      <HintPath>Resources\CyUSB.dll</HintPath>
+    </Reference>
+    <Reference Include="FX3Api">
+      <HintPath>Resources\FX3Api.dll</HintPath>
+    </Reference>
+    <Reference Include="FX3USB">
+      <HintPath>Resources\FX3USB.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
 </Project>

@@ -4,7 +4,7 @@ using System.Text;
 
 namespace FX3ServoController
 {
-    class ServoMotor
+    public class ServoMotor
     {
         //Private members
         private FX3Api.FX3PinObject m_pin;
@@ -108,6 +108,17 @@ namespace FX3ServoController
                     value = 360.0 - value;
 
                 m_maxAngle = value;
+            }
+        }
+
+        /// <summary>
+        /// Get the PWM block associated with the servo motor. This is essentially the port identifier for the motor.
+        /// </summary>
+        public uint PWMPinIndex
+        {
+            get
+            {
+                return m_pin.pinConfig % 8;
             }
         }
     }
